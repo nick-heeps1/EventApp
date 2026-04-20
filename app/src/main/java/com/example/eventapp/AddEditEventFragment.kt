@@ -21,17 +21,21 @@ import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.*
 
+// Fragment handles both creating and editing events
 class AddEditEventFragment : Fragment() {
 
     private var binding: FragmentAddEditEventBinding? = null
     private val viewModel: EventViewModel by activityViewModels()
     private val args: AddEditEventFragmentArgs by navArgs()
 
-    // calendar to keep track of the selected date
+    // Tracks the user's chosen date and time
     private var myCalendar: Calendar = Calendar.getInstance()
+    // Prevents saving if no date has been chosen
     private var dateSelected = false
+    // Holds existing event data when editing, null when creating
     private var currentEvent: Event? = null
 
+    // Inflates the layout and returns the root view
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?,
         savedInstanceState: Bundle?
@@ -43,32 +47,33 @@ class AddEditEventFragment : Fragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
 
-        // set up the category dropdown
+        // Populate the category spinner with predefined options
         val categories = arrayOf("Work", "Social", "Travel", "Health", "Personal", "Other")
         val spinnerAdapter = ArrayAdapter(requireContext(), android.R.layout.simple_spinner_item, categories)
         spinnerAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
         binding!!.spinnerCategory.adapter = spinnerAdapter
 
-        // check if we are editing or adding
+        // eventId of -1 means we're creating a new event
         if (args.eventId != -1) {
             binding!!.tvFormTitle.text = "Edit Event"
 
-            // load the existing event data
+            // Fetch the existing event asynchronously from the database
             lifecycleScope.launch {
                 currentEvent = viewModel.getEventById(args.eventId)
 
                 if (currentEvent != null) {
+                    // Pre-fill all fields with the existing event's data
                     binding!!.etTitle.setText(currentEvent!!.title)
                     binding!!.etLocation.setText(currentEvent!!.location)
 
-                    // set the correct category in the spinner
+                    // Find and select the matching category in the spinner
                     val catList = categories.toList()
                     val index = catList.indexOf(currentEvent!!.category)
                     if (index >= 0) {
                         binding!!.spinnerCategory.setSelection(index)
                     }
 
-                    // load the saved date
+                    // Restore the calendar to the event's saved timestamp
                     myCalendar.timeInMillis = currentEvent!!.dateTimeMillis
                     dateSelected = true
                     showDateTime()
@@ -78,6 +83,7 @@ class AddEditEventFragment : Fragment() {
             binding!!.tvFormTitle.text = "New Event"
         }
 
+        // Wire up buttons to their respective picker and save actions
         binding!!.btnPickDate.setOnClickListener {
             pickDate()
         }
@@ -90,17 +96,20 @@ class AddEditEventFragment : Fragment() {
             saveEvent()
         }
 
+        // Cancel discards changes and returns to the previous screen
         binding!!.btnCancel.setOnClickListener {
             findNavController().popBackStack()
         }
     }
 
     private fun pickDate() {
+        // Start the picker at the currently selected calendar date
         val year = myCalendar.get(Calendar.YEAR)
         val month = myCalendar.get(Calendar.MONTH)
         val day = myCalendar.get(Calendar.DAY_OF_MONTH)
 
         val datePicker = DatePickerDialog(requireContext(), { _, y, m, d ->
+            // Update calendar with the user's chosen date
             myCalendar.set(Calendar.YEAR, y)
             myCalendar.set(Calendar.MONTH, m)
             myCalendar.set(Calendar.DAY_OF_MONTH, d)
@@ -108,7 +117,7 @@ class AddEditEventFragment : Fragment() {
             showDateTime()
         }, year, month, day)
 
-        // dont allow past dates for new events
+        // Block past dates only when creating a brand new event
         if (currentEvent == null) {
             datePicker.datePicker.minDate = System.currentTimeMillis()
         }
@@ -117,10 +126,12 @@ class AddEditEventFragment : Fragment() {
     }
 
     private fun pickTime() {
+        // Start the picker at the currently selected calendar time
         val hour = myCalendar.get(Calendar.HOUR_OF_DAY)
         val minute = myCalendar.get(Calendar.MINUTE)
 
         val timePicker = TimePickerDialog(requireContext(), { _, h, min ->
+            // Update calendar with the user's chosen time
             myCalendar.set(Calendar.HOUR_OF_DAY, h)
             myCalendar.set(Calendar.MINUTE, min)
             showDateTime()
@@ -129,6 +140,7 @@ class AddEditEventFragment : Fragment() {
         timePicker.show()
     }
 
+    // Formats and displays the selected date and time on screen
     private fun showDateTime() {
         val sdf = SimpleDateFormat("dd MMM yyyy, hh:mm a", Locale.getDefault())
         binding!!.tvSelectedDateTime.text = sdf.format(myCalendar.time)
@@ -139,16 +151,17 @@ class AddEditEventFragment : Fragment() {
         val location = binding!!.etLocation.text.toString().trim()
         val category = binding!!.spinnerCategory.selectedItem.toString()
 
-        // check title isnt empty
+        // Reject save if the title field is empty
         if (title.isEmpty()) {
             binding!!.tilTitle.error = "Please enter a title"
             Toast.makeText(requireContext(), "Title is required", Toast.LENGTH_SHORT).show()
             return
         }
 
+        // Clear any previously shown title error
         binding!!.tilTitle.error = null
 
-        // check date was picked
+        // Reject save if the user never picked a date
         if (!dateSelected) {
             Toast.makeText(requireContext(), "Please pick a date and time", Toast.LENGTH_SHORT).show()
             return
@@ -156,14 +169,14 @@ class AddEditEventFragment : Fragment() {
 
         val millis = myCalendar.timeInMillis
 
-        // make sure date isnt in the past for new events
+        // New events must not be scheduled in the past
         if (currentEvent == null && millis < System.currentTimeMillis()) {
             Snackbar.make(binding!!.root, "Date cannot be in the past!", Snackbar.LENGTH_LONG).show()
             return
         }
 
         if (currentEvent != null) {
-            // update existing event
+            // Overwrite existing event fields and persist via ViewModel
             currentEvent!!.title = title
             currentEvent!!.category = category
             currentEvent!!.location = location
@@ -171,7 +184,7 @@ class AddEditEventFragment : Fragment() {
             viewModel.updateEvent(currentEvent!!)
             Toast.makeText(requireContext(), "Event updated!", Toast.LENGTH_SHORT).show()
         } else {
-            // create new event
+            // Build a new Event object and save it
             val newEvent = Event(
                 title = title,
                 category = category,
@@ -182,9 +195,11 @@ class AddEditEventFragment : Fragment() {
             Toast.makeText(requireContext(), "Event saved!", Toast.LENGTH_SHORT).show()
         }
 
+        // Navigate back after successfully saving the event
         findNavController().popBackStack()
     }
 
+    // Release binding reference to avoid memory leaks
     override fun onDestroyView() {
         super.onDestroyView()
         binding = null
