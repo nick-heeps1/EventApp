@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">EventApp</string>
+    <string name="no_date_selected">No date selected</string>
+</resources>
